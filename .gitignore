@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.ruff_cache/
+.mypy_cache/
+build/
+.cache/
+.DS_Store
+.coverage
+venv/
+.pytest_cache/
+.venv/
+.eggs/
+.env
+Desktop.ini
