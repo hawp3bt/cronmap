@@ -2,88 +2,72 @@ package schedule
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
-	"github.com/user/cronmap/internal/parser"
+	"github.com/example/cronmap/internal/parser"
 )
 
-var dayNames = []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
-
-// Slot represents a scheduled job at a specific day and hour.
+// Slot represents a single scheduled event within a day.
 type Slot struct {
-	Day     int // 0=Sunday ... 6=Saturday
 	Hour    int
-	Minutes []int
+	Minute  int
 	Command string
 }
 
-// WeeklySchedule maps day -> hour -> list of Slots.
-type WeeklySchedule map[int]map[int][]Slot
+// dayNames maps cron weekday numbers (0=Sunday) to names.
+var dayNames = []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
 
-// Build converts a slice of CronEntries into a WeeklySchedule.
-func Build(entries []*parser.CronEntry) (WeeklySchedule, error) {
-	schedule := make(WeeklySchedule)
+// Build converts a slice of parsed cron entries into a weekly map.
+func Build(entries []*parser.Entry) map[string][]Slot {
+	week := make(map[string][]Slot)
 
-	for _, entry := range entries {
-		if entry == nil {
+	for _, e := range entries {
+		if e == nil {
 			continue
 		}
-
-		days, err := parser.ExpandField(entry.DayOfWeek, 0, 6)
-		if err != nil {
-			return nil, fmt.Errorf("expanding day-of-week: %w", err)
-		}
-		hours, err := parser.ExpandField(entry.Hour, 0, 23)
-		if err != nil {
-			return nil, fmt.Errorf("expanding hour: %w", err)
-		}
-		minutes, err := parser.ExpandField(entry.Minute, 0, 59)
-		if err != nil {
-			return nil, fmt.Errorf("expanding minute: %w", err)
-		}
-
-		for _, d := range days {
-			if schedule[d] == nil {
-				schedule[d] = make(map[int][]Slot)
+		for _, dow := range e.DaysOfWeek {
+			if dow < 0 || dow > 6 {
+				continue
 			}
-			for _, h := range hours {
-				schedule[d][h] = append(schedule[d][h], Slot{
-					Day:     d,
-					Hour:    h,
-					Minutes: minutes,
-					Command: entry.Command,
-				})
+			day := dayNames[dow]
+			for _, hour := range e.Hours {
+				for _, min := range e.Minutes {
+					week[day] = append(week[day], Slot{
+						Hour:    hour,
+						Minute:  min,
+						Command: e.Command,
+					})
+				}
 			}
 		}
 	}
 
-	return schedule, nil
+	for day := range week {
+		sort.Slice(week[day], func(i, j int) bool {
+			a, b := week[day][i], week[day][j]
+			if a.Hour != b.Hour {
+				return a.Hour < b.Hour
+			}
+			return a.Minute < b.Minute
+		})
+	}
+
+	return week
 }
 
-// Render produces a human-readable text representation of the weekly schedule.
-func Render(ws WeeklySchedule) string {
+// Render produces a plain-text weekly schedule view.
+func Render(week map[string][]Slot) string {
 	var sb strings.Builder
-
-	for day := 0; day <= 6; day++ {
-		hours, ok := ws[day]
+	for _, day := range dayNames {
+		slots, ok := week[day]
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(&sb, "=== %s ===\n", dayNames[day])
-		for hour := 0; hour <= 23; hour++ {
-			slots, ok := hours[hour]
-			if !ok {
-				continue
-			}
-			for _, slot := range slots {
-				minStrs := make([]string, len(slot.Minutes))
-				for i, m := range slot.Minutes {
-					minStrs[i] = fmt.Sprintf("%02d", m)
-				}
-				fmt.Fprintf(&sb, "  %02d:[%s]  %s\n", hour, strings.Join(minStrs, ","), slot.Command)
-			}
+		sb.WriteString(day + ":\n")
+		for _, s := range slots {
+			sb.WriteString(fmt.Sprintf("  %02d:%02d  %s\n", s.Hour, s.Minute, s.Command))
 		}
 	}
-
 	return sb.String()
 }
